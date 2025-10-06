@@ -2,63 +2,78 @@ import streamlit as st
 import joblib
 import numpy as np
 from gensim.models import Word2Vec
-import os
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-# --- Paths ---
-BASE_DIR = os.path.dirname(__file__)
-MODEL_PATH = os.path.join(BASE_DIR, 'model.pkl')
-W2V_PATH = os.path.join(BASE_DIR, 'word2vec.model')
+# -----------------------------
+# Load vectorizers and models
+# -----------------------------
+# Word2Vec (for Decision Tree / Random Forest)
+w2v_model = Word2Vec.load("word2vec.model")
+Rfw2v = joblib.load("RandomForestw2v.pkl")  # uses Word2Vec
 
-# --- Load models ---
-try:
-    model = joblib.load(MODEL_PATH)
-except FileNotFoundError:
-    st.error(f"Model file not found at {MODEL_PATH}. Please check deployment.")
-    st.stop()
+# TF-IDF (for Logistic Regression / SVM)
+tfidf_vectorizer = joblib.load("tfidf_vectorizer.pkl")
+Rftf = joblib.load("RandomForesttf.pkl")       # uses TF-IDF
 
-try:
-    w2v_model = Word2Vec.load(W2V_PATH)
-except FileNotFoundError:
-    st.error(f"Word2Vec model file not found at {W2V_PATH}. Please check deployment.")
-    st.stop()
+# Map model names to models and their vectorizer type
+models = {
+    "Word2Vec": {"model": Rfw2v, "vectorizer": "word2vec"},
+    "TF-IDF": {"model": Rftf, "vectorizer": "tfidf"},
+}
 
-# --- Helper function ---
-def get_vector(text):
+# -----------------------------
+# Helper functions
+# -----------------------------
+def text_to_w2v_vector(text):
     words = text.split()
     words = [w for w in words if w in w2v_model.wv]
-    if not words:
+    if len(words) == 0:
         return np.zeros(w2v_model.vector_size)
     return np.mean(w2v_model.wv[words], axis=0)
 
-# --- Streamlit UI ---
+# -----------------------------
+# Streamlit UI
+# -----------------------------
 st.set_page_config(page_title="Fake News Detection", layout="centered")
+st.title("Fake News Detection App")
+st.write("Enter a news headline or paragraph to check if it's real or fake.")
 
-st.title("Fake News Detection")
-st.write("Enter a news headline or paragraph to check if it's real or fake, along with confidence score.")
+# Sidebar for selecting model
+st.sidebar.title("Choose a Vectorizer")
+selected_model_name = st.sidebar.radio("Model", list(models.keys()))
+selected_model_info = models[selected_model_name]
+selected_model = selected_model_info["model"]
+vectorizer_type = selected_model_info["vectorizer"]
 
-user_input = st.text_area("Enter your news text below:")
+# User input
+user_input = st.text_area("Enter your news text:")
 
 if st.button("Check News Authenticity"):
-    if not user_input.strip():
+    if user_input.strip() == "":
         st.warning("Please enter some text first.")
     else:
-        input_vec = get_vector(user_input).reshape(1, -1)
-        prediction = model.predict(input_vec)[0]
-
-        if hasattr(model, "predict_proba"):
-            confidence = np.max(model.predict_proba(input_vec)) * 100
+        # Choose vectorization method based on selected model
+        if vectorizer_type == "word2vec":
+            input_vec = text_to_w2v_vector(user_input).reshape(1, -1)
+        elif vectorizer_type == "tfidf":
+            input_vec = tfidf_vectorizer.transform([user_input])
         else:
-            confidence = None
+            st.error("Unknown vectorizer type!")
+            st.stop()
 
+        # Prediction
+        prediction = selected_model.predict(input_vec)[0]
+
+        # Confidence if available
+        confidence = None
+        if hasattr(selected_model, "predict_proba"):
+            confidence = np.max(selected_model.predict_proba(input_vec)) * 100
+
+        # Display results
         if prediction == 1:
-            st.success("This appears to be Real News.")
+            st.success("This seems to be Real News")
         else:
-            st.error("This appears to be Fake News.")
+            st.error("This seems to be Fake News")
 
         if confidence is not None:
-            st.write(f"Model Confidence: {confidence:.2f}%")
-        else:
-            st.info("Confidence score not available for this model.")
-
-st.markdown("---")
-st.caption("Developed using Streamlit, Word2Vec, and scikit-learn")
+            st.info(f"Model Confidence: {confidence:.2f}%")
