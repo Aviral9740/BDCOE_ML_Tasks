@@ -1,0 +1,5 @@
+- I have created this model by using a dataset of true and fake news articles that had approximately 40000 entries. 
+- I have used two types of vectorization techniques to convert the text into numerical form: Word2Vec and TF-IDF.
+- I have trained Random Forest Classifier model on these processed data.
+- I have deployed the project on streamlit.
+- Here's the deployed link: https://realhaiyafake.streamlit.app/
